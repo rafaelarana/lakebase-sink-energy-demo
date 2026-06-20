@@ -1,0 +1,64 @@
+# Two jobs:
+#   setup_demo         — one-time provisioning of the objects DAB can't declare
+#                        (the bronze Delta table, the dim_asset seed, and the Postgres
+#                        asset_live_state PK table + grants). Serverless.
+#   stream_to_lakebase — the demo's star: Structured Streaming bronze Delta → Lakebase SINK.
+#                        Runs on a CLASSIC DBR-18 cluster (the sink does NOT support serverless).
+resources:
+  jobs:
+    setup_demo:
+      name: "[lb-sink-demo] setup — tables + dim_asset + Lakebase DDL"
+      tags: { project: lakebase-sink-demo, kind: setup }
+      tasks:
+        - task_key: bronze_and_dim
+          spark_python_task:
+            python_file: ../src/setup/01_bronze_and_dim.py
+          environment_key: setup_env
+        - task_key: lakebase_ddl
+          depends_on:
+            - task_key: bronze_and_dim
+          spark_python_task:
+            python_file: ../src/setup/02_lakebase_ddl.py
+            parameters:
+              - "--project-id"
+              - ${var.lakebase_project_id}
+              - "--database"
+              - ${var.lakebase_database}
+              - "--dbtable"
+              - ${var.lakebase_dbtable}
+          environment_key: setup_env
+      environments:
+        - environment_key: setup_env
+          spec:
+            client: "3"
+            dependencies:
+              - "psycopg[binary]>=3.1"
+              - "databricks-sdk>=0.89.0"
+
+    stream_to_lakebase:
+      name: "[lb-sink-demo] stream — bronze Delta → Lakebase sink"
+      tags: { project: lakebase-sink-demo, kind: realtime }
+      continuous:
+        pause_status: UNPAUSED
+      tasks:
+        - task_key: sink
+          spark_python_task:
+            python_file: ../src/stream/sink_to_lakebase.py
+          job_cluster_key: sink_cluster
+      job_clusters:
+        - job_cluster_key: sink_cluster
+          new_cluster:
+            # The Lakebase streaming sink requires DBR 18+ on CLASSIC compute
+            # (dedicated/standard access mode), Photon for the realTime trigger.
+            spark_version: ${var.dbr_version}
+            runtime_engine: PHOTON
+            node_type_id: ${var.node_type_id}
+            num_workers: 1
+            data_security_mode: SINGLE_USER
+            spark_env_vars:
+              DEMO_CATALOG: ${var.catalog}
+              DEMO_OPS_SCHEMA: ${var.ops_schema}
+              LB_PROJECT_ID: ${var.lakebase_project_id}
+              LB_DATABASE: ${var.lakebase_database}
+              LB_DBTABLE: ${var.lakebase_dbtable}
+              TRIGGER_MODE: ${var.trigger_mode}

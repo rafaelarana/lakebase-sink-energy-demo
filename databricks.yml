@@ -1,0 +1,62 @@
+# ============================================================================
+# lakebase-streaming-sink-demo — top-level DAB bundle.
+#
+# Creates EVERY Databricks object for the demo in one bundle:
+#   • Unity Catalog catalog + `ops` schema + `checkpoints` volume   (resources/objects.yml)
+#   • Lakebase Autoscale project (auto branch/endpoint/db)          (resources/objects.yml)
+#   • setup job  — bronze table + dim_asset seed + Lakebase DDL/grants (resources/jobs.yml)
+#   • stream job — Structured Streaming → Lakebase SINK (DBR 18, classic) (resources/jobs.yml)
+#
+# The Zerobus producer runs OFF-platform (src/ingest, local venv) — see README.
+#
+#   databricks bundle validate -p <profile>
+#   databricks bundle deploy   -t dev -p <profile>
+#   databricks bundle run setup_demo   -t dev -p <profile>     # one-time: create tables + grants
+#   # start the producer locally (scripts/run_producer.sh), then:
+#   databricks bundle run stream_to_lakebase -t dev -p <profile>
+#   databricks bundle destroy  -t dev -p <profile>             # symmetric teardown
+# ============================================================================
+bundle:
+  name: lakebase-streaming-sink-demo
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog name (created by this bundle)
+    default: lakebase_sink_demo
+  ops_schema:
+    description: Schema for the bronze history + dim_asset
+    default: ops
+  lakebase_project_id:
+    description: Lakebase Autoscale project id (created by this bundle)
+    default: lakebase-sink-demo
+  lakebase_database:
+    description: Default database in the Lakebase project (note the HYPHEN)
+    default: databricks-postgres
+  lakebase_dbtable:
+    description: Postgres target table the streaming sink upserts into
+    default: public.asset_live_state
+  dbr_version:
+    description: "Runtime for the stream job. The Lakebase sink needs DBR 18+ on CLASSIC compute."
+    default: 18.0.x-scala2.12
+  node_type_id:
+    description: Worker/driver node type for the classic stream cluster (AWS default; change per cloud)
+    default: m5d.xlarge
+  trigger_mode:
+    description: "processing (processingTime micro-batches) | realtime (.trigger(realTime); needs Photon)"
+    default: processing
+
+sync:
+  paths:
+    - src
+
+targets:
+  dev:
+    mode: development
+    default: true
+  prod:
+    mode: production
+    variables:
+      trigger_mode: realtime

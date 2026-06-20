@@ -1,0 +1,21 @@
+// Protobuf schema for the Zerobus bronze landing table
+// `lakebase_sink_demo.ops.bronze_sensor_reading`.
+//
+// Field NAME maps 1:1 to a Delta column. Delta→proto types:
+//   TIMESTAMP → int64 (epoch MICROSECONDS), DOUBLE → double, INT → int32, STRING → string.
+//
+// Compile the Python binding (scripts/run_producer.sh does this for you):
+//   python -m grpc_tools.protoc -I schema --python_out . schema/sensor_reading.proto
+//   # → sensor_reading_pb2.py
+
+syntax = "proto3";
+
+message SensorReading {
+  string sensor_asset_id = 1;
+  string scada_tag       = 2;
+  string site_code       = 3;
+  int64  reading_ts      = 4;  // event time, epoch microseconds (Delta TIMESTAMP)
+  double value           = 5;
+  int32  quality_code    = 6;  // OPC-UA style quality (192 = good)
+  int64  ingest_ts       = 7;  // edge send time, epoch microseconds
+}

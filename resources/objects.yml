@@ -1,0 +1,33 @@
+# UC catalog + schema + checkpoint volume, and the Lakebase Autoscale project.
+# All DAB-managed: `bundle deploy` creates them, `bundle destroy` removes them.
+resources:
+  catalogs:
+    demo:
+      name: ${var.catalog}
+      comment: "lakebase-streaming-sink-demo — energy fleet telemetry"
+
+  schemas:
+    ops:
+      catalog_name: ${resources.catalogs.demo.name}
+      name: ${var.ops_schema}
+      comment: "Bronze reading history (Zerobus landing) + dim_asset reference"
+
+  volumes:
+    checkpoints:
+      catalog_name: ${resources.catalogs.demo.name}
+      schema_name: ${resources.schemas.ops.name}
+      name: checkpoints
+      volume_type: MANAGED
+      comment: "Structured Streaming checkpoints"
+
+  # Lakebase Autoscale. Declaring the PROJECT is enough — it auto-creates the
+  # `production` branch, a `primary` endpoint (default autoscaling min=max=1 CU) and
+  # the `databricks-postgres` database (note the HYPHEN — confirmed on a live project).
+  # Declaring postgres_branches/postgres_endpoints for those auto-created names fails
+  # with "already exists"; to change CU or use a non-default branch, declare a NEW one.
+  postgres_projects:
+    lakebase:
+      project_id: ${var.lakebase_project_id}
+      display_name: "Lakebase streaming-sink demo — asset live state"
+      pg_version: 17
+      enable_pg_native_login: false

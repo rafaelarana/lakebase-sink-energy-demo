@@ -1,0 +1,7 @@
+# Zerobus producer dependencies (runs OFF-platform — edge host / VM / container).
+# NOTE: the Zerobus SDK cannot pip-install on Databricks *serverless* compute; run this
+# producer from your laptop or an edge gateway, not in a serverless notebook.
+databricks-sdk>=0.85.0
+databricks-zerobus-ingest-sdk>=1.0.0
+grpcio-tools>=1.62.0     # provides `python -m grpc_tools.protoc` to compile the .proto
+protobuf>=5.26
