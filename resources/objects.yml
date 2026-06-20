@@ -1,20 +1,18 @@
-# UC catalog + schema + checkpoint volume, and the Lakebase Autoscale project.
+# Schema + checkpoint volume (in an EXISTING catalog), and the Lakebase Autoscale project.
 # All DAB-managed: `bundle deploy` creates them, `bundle destroy` removes them.
+# The CATALOG is an input (var.catalog) — it must already exist. (Creating a catalog needs
+# DAB's `direct` engine + a metastore storage location, which isn't portable across accounts;
+# keeping the catalog workspace-governed matches the common pattern.)
 resources:
-  catalogs:
-    demo:
-      name: ${var.catalog}
-      comment: "lakebase-streaming-sink-demo — energy fleet telemetry"
-
   schemas:
     ops:
-      catalog_name: ${resources.catalogs.demo.name}
+      catalog_name: ${var.catalog}
       name: ${var.ops_schema}
       comment: "Bronze reading history (Zerobus landing) + dim_asset reference"
 
   volumes:
     checkpoints:
-      catalog_name: ${resources.catalogs.demo.name}
+      catalog_name: ${var.catalog}
       schema_name: ${resources.schemas.ops.name}
       name: checkpoints
       volume_type: MANAGED

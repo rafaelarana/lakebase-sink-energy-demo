@@ -33,24 +33,28 @@ variables:
     description: Lakebase Autoscale project id (created by this bundle)
     default: lakebase-sink-demo
   lakebase_database:
-    description: Default database in the Lakebase project (note the HYPHEN)
-    default: databricks-postgres
+    description: "Default Postgres database. NOTE: the control plane shows 'databricks-postgres' (hyphen), but the actual PG database name is 'databricks_postgres' (underscore) — use the underscore to connect."
+    default: databricks_postgres
   lakebase_dbtable:
     description: Postgres target table the streaming sink upserts into
     default: public.asset_live_state
   dbr_version:
-    description: "Runtime for the stream job. The Lakebase sink needs DBR 18+ on CLASSIC compute."
-    default: 18.0.x-scala2.12
+    description: "Runtime for the stream job. The Lakebase sink needs DBR 18+ on CLASSIC compute (Spark 4.1 = scala2.13)."
+    default: 18.2.x-scala2.13
   node_type_id:
     description: Worker/driver node type for the classic stream cluster (AWS default; change per cloud)
     default: m5d.xlarge
   trigger_mode:
     description: "processing (processingTime micro-batches) | realtime (.trigger(realTime); needs Photon)"
     default: processing
+  stream_pause:
+    description: "UNPAUSED auto-starts the continuous sink on deploy; PAUSED deploys it stopped."
+    default: UNPAUSED
 
 sync:
   paths:
     - src
+    - notebooks
 
 targets:
   dev:

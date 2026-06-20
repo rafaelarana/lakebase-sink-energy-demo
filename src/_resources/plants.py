@@ -1,12 +1,12 @@
 """A fictional renewable portfolio for the demo.
 
-Everything here is INVENTED — the operator "Aurora Renewables", the site names, and the
+Everything here is INVENTED — the operator "Enerbricks", the site names, and the
 (rounded, representative) coordinates are not real assets. It just needs to be plausible and
 varied enough to make an interesting live-state demo. `site_code` is a short stable code used
 to build asset ids and SCADA tags. `type` ∈ {onshore_wind, offshore_wind, solar_pv, battery}.
 """
 
-OPERATOR = "Aurora Renewables"
+OPERATOR = "Enerbricks"
 
 PLANTS = [
     {"site_code": "NRDG", "plant_name": "North Ridge Wind",    "type": "onshore_wind",  "country": "Ireland",        "region": "County Mayo (uplands)",  "latitude": 54.0, "longitude": -9.3, "capacity_mw": 120.0, "commissioned_year": 2018, "num_units": 40},

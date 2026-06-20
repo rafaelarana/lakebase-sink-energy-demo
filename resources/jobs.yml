@@ -1,9 +1,10 @@
-# Two jobs:
+# Two jobs (notebook-based):
 #   setup_demo         — one-time provisioning of the objects DAB can't declare
-#                        (the bronze Delta table, the dim_asset seed, and the Postgres
-#                        asset_live_state PK table + grants). Serverless.
+#                        (bronze Delta table, dim_asset seed, Postgres asset_live_state
+#                        PK table + grants). Serverless notebooks.
 #   stream_to_lakebase — the demo's star: Structured Streaming bronze Delta → Lakebase SINK.
 #                        Runs on a CLASSIC DBR-18 cluster (the sink does NOT support serverless).
+# Notebook paths are relative to THIS file (resources/), hence ../notebooks/...  (no .py).
 resources:
   jobs:
     setup_demo:
@@ -11,39 +12,39 @@ resources:
       tags: { project: lakebase-sink-demo, kind: setup }
       tasks:
         - task_key: bronze_and_dim
-          spark_python_task:
-            python_file: ../src/setup/01_bronze_and_dim.py
-          environment_key: setup_env
+          notebook_task:
+            notebook_path: ../notebooks/01_bronze_and_dim.py
+            base_parameters:
+              catalog: ${var.catalog}
+              ops_schema: ${resources.schemas.ops.name}   # resolved (dev mode prefixes it)
         - task_key: lakebase_ddl
           depends_on:
             - task_key: bronze_and_dim
-          spark_python_task:
-            python_file: ../src/setup/02_lakebase_ddl.py
-            parameters:
-              - "--project-id"
-              - ${var.lakebase_project_id}
-              - "--database"
-              - ${var.lakebase_database}
-              - "--dbtable"
-              - ${var.lakebase_dbtable}
-          environment_key: setup_env
-      environments:
-        - environment_key: setup_env
-          spec:
-            client: "3"
-            dependencies:
-              - "psycopg[binary]>=3.1"
-              - "databricks-sdk>=0.89.0"
+          notebook_task:
+            notebook_path: ../notebooks/02_lakebase_ddl.py
+            base_parameters:
+              project_id: ${var.lakebase_project_id}
+              database: ${var.lakebase_database}
+              dbtable: ${var.lakebase_dbtable}
 
     stream_to_lakebase:
       name: "[lb-sink-demo] stream — bronze Delta → Lakebase sink"
       tags: { project: lakebase-sink-demo, kind: realtime }
       continuous:
-        pause_status: UNPAUSED
+        # UNPAUSED auto-starts the (billable, classic) sink on every deploy. Set
+        # stream_pause=PAUSED to deploy the objects without launching the cluster.
+        pause_status: ${var.stream_pause}
       tasks:
         - task_key: sink
-          spark_python_task:
-            python_file: ../src/stream/sink_to_lakebase.py
+          notebook_task:
+            notebook_path: ../notebooks/03_sink_to_lakebase.py
+            base_parameters:
+              catalog: ${var.catalog}
+              ops_schema: ${resources.schemas.ops.name}
+              lb_project_id: ${var.lakebase_project_id}
+              lb_database: ${var.lakebase_database}
+              lb_dbtable: ${var.lakebase_dbtable}
+              trigger_mode: ${var.trigger_mode}
           job_cluster_key: sink_cluster
       job_clusters:
         - job_cluster_key: sink_cluster
@@ -55,10 +56,3 @@ resources:
             node_type_id: ${var.node_type_id}
             num_workers: 1
             data_security_mode: SINGLE_USER
-            spark_env_vars:
-              DEMO_CATALOG: ${var.catalog}
-              DEMO_OPS_SCHEMA: ${var.ops_schema}
-              LB_PROJECT_ID: ${var.lakebase_project_id}
-              LB_DATABASE: ${var.lakebase_database}
-              LB_DBTABLE: ${var.lakebase_dbtable}
-              TRIGGER_MODE: ${var.trigger_mode}

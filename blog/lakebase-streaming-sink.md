@@ -1,24 +1,28 @@
-# Stream straight into Postgres: the Lakebase sink that finally retires `foreachBatch`
+# Stream straight into Postgres: the Lakebase sink that finally killed my `foreachBatch`
 
-*A hands-on guide to firehosing low-latency streams into Lakebase — and finally retiring the most cursed closure in the codebase.*
+*A hands-on guide to firehosing low-latency streams into Lakebase — and saying goodbye to the most cursed closure in your codebase.*
+
+> 📺 **This is a 2-part series.**
+> **Part 1 (you're here)** — the concept, the moves, and why the sink exists.
+> **[Part 2](lakebase-streaming-sink-part-2.md)** — a complete, clone-and-run project: a renewable-energy fleet's live state streamed into Lakebase, every object provisioned with DAB, plus the war stories from actually deploying it.
 
 ---
 
-Spend enough years around streaming pipelines and you start to recognize the same scar tissue on every team you walk into.
+Let me tell you about the worst code I keep rewriting.
 
-It shows up the moment a stream has to land in an operational database. Someone opens `foreachBatch`, cracks a JDBC connection inside the closure like it's 2014, hand-writes an upsert, bolts on retry logic for the deadlock everyone knows is coming, adopts a connection pool nobody wanted, and then burns an afternoon trying to prove the whole contraption is idempotent on replay. It usually isn't. They find out in production, at night, on a weekend. (It's always at night.)
+Every time a stream needs to land in an operational database, I open `foreachBatch`, crack open a JDBC connection inside the closure like it's 2014, hand-write an upsert, bolt on retry logic for the deadlock I *know* is coming, babysit a connection pool nobody asked me to adopt, and then lose an entire afternoon staring at the ceiling trying to convince myself the whole contraption is idempotent on replay. Spoiler: it usually isn't, and I find out in production, at night, on a weekend.
 
-I've watched a lot of good engineers write that exact code. I've sat next to them while we debugged it, sketched the same deadlock on a whiteboard for the third time, and gently explained — once again — why the replay duplicated half the rows. It's a rite of passage, and a miserable one. Nobody has ever finished it and said "that was fun."
+I have written this code maybe a dozen times. I have never once enjoyed it.
 
-So when Databricks Runtime 18 shipped a **first-class Lakebase sink** for Structured Streaming, a whole category of hard-won suffering quietly became obsolete. It writes straight to a Lakebase (managed Postgres) table — with batching, automatic retries, backpressure, and workspace-managed auth all baked in. A few `.option()` calls and you're done. No closure. No pool. No 11pm correctness crisis.
+So when Databricks Runtime 18 shipped a **first-class Lakebase sink** for Structured Streaming, I may have made a noise out loud. It writes straight to a Lakebase (managed Postgres) table — with batching, automatic retries, backpressure, and workspace-managed auth all baked in. You write a few `.option()` calls and you're done. No closure. No pool. No 11pm correctness crisis.
 
 This post is the hands-on tour, built around a generic IoT/clickstream example: a stream of device events that continuously **upserts** a "latest state per device" table in Lakebase, which a live app or dashboard then reads with single-digit-millisecond point lookups. Fast in, fast out, zero boilerplate. Let's go.
 
 ---
 
-## Why this one matters
+## Why I care about this so much
 
-The pattern is *everywhere*, and once you've seen it on enough teams you spot it instantly: events stream in, and something operational — an app, a dashboard, an API — needs the **current** state. Not a Delta snapshot from 15 minutes ago. Now. The number from this second.
+The pattern is *everywhere*, and once you see it you can't unsee it: events stream in, and something operational — an app, a dashboard, an API — needs the **current** state. Not a Delta snapshot from 15 minutes ago. Now. The number from this second.
 
 The docs frame three canonical use cases, and honestly they're all the same dream wearing different hats:
 
@@ -26,7 +30,7 @@ The docs frame three canonical use cases, and honestly they're all the same drea
 - **Continuous sync** of changing data into a transactional store.
 - **Sub-second streaming output** to Postgres tables using real-time mode.
 
-The old way to do all three was `foreachBatch` + JDBC. And to be fair, it *works*. So does pushing your car to the office. The catch is that the team owns every miserable part: connection lifecycle, batching, conflict handling, deadlock retries, and the philosophical burden of proving it correct. The Lakebase sink quietly takes all of that off the table and never brings it up again.
+The old way to do all three was `foreachBatch` + JDBC. And look — it *works*. So does pushing your car to the office. The point is you own every miserable part: connection lifecycle, batching, conflict handling, deadlock retries, and the philosophical burden of proving it's correct. The Lakebase sink quietly takes all of that off your plate and never brings it up again.
 
 ---
 
@@ -266,6 +270,18 @@ Whenever a stream needs to keep an **operational, queryable table** fresh at the
 Here's my actual, unhedged take: if your sink is Lakebase and you're on DBR 18+, hand-rolling this plumbing in 2026 isn't engineering grit — it's just unpaid suffering. Delete the closure. Write the five options. Go reclaim your afternoon.
 
 You earned it.
+
+---
+
+## Next up — Part 2: the real thing
+
+Concepts are nice; running code is better. **[Part 2](lakebase-streaming-sink-part-2.md)** takes
+everything here and turns it into a complete, clone-and-run project: a **Zerobus** stream simulator
+feeding a renewable-energy fleet's telemetry into Delta, a Structured Streaming job upserting
+**live asset state** into Lakebase, and **every object provisioned by a Databricks Asset Bundle** —
+plus the unglamorous war stories from actually deploying it (the ones the docs don't tell you).
+
+Repo: [`rafaelarana/lakebase-sink-energy-demo`](https://github.com/rafaelarana/lakebase-sink-energy-demo).
 
 ---
 

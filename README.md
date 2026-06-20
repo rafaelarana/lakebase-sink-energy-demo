@@ -1,7 +1,8 @@
 # Stream straight into Postgres — the Lakebase Structured Streaming sink
 
-A runnable companion to the blog **[“Stream straight into Postgres: the Lakebase sink that
-finally retires `foreachBatch`”](blog/lakebase-streaming-sink.md)**.
+The runnable companion to a 2-part blog series:
+**[Part 1 — the Lakebase sink](blog/lakebase-streaming-sink.md)** (the concept) ·
+**[Part 2 — this project, end to end](blog/lakebase-streaming-sink-part-2.md)** (the build + war stories).
 
 A **Zerobus** stream simulator feeds an energy fleet's telemetry into a **Delta** history
 table; a Spark **Structured Streaming** job reads that Delta table and writes the **latest
@@ -31,67 +32,147 @@ the full time-series.
 `databricks.yml` + `resources/` declare everything; `bundle deploy` creates it and
 `bundle destroy` removes it — symmetrically.
 
-- **Catalog** `lakebase_sink_demo` + schema **`ops`** + **`checkpoints`** volume.
+- **Schema** (`ops`) + **`checkpoints` volume** inside an *existing* catalog (the catalog is
+  an input, not created by the bundle).
 - **Lakebase Autoscale project** (`postgres_projects`) — auto-creates the `production`
-  branch, `primary` endpoint (min=max=1 CU), and the `databricks-postgres` database.
-- **`setup_demo` job** — creates the bronze table + seeds `dim_asset` (Spark), then creates
-  the Postgres `asset_live_state` table **with a PRIMARY KEY** + grants (`psycopg`). These
-  are the objects DAB can't declare directly.
-- **`stream_to_lakebase` job** — the ★ streaming job, on a **classic DBR 18 cluster**
-  (the sink requires DBR 18+ and does **not** support serverless).
+  branch, `primary` endpoint (min=max=1 CU), and the `databricks_postgres` database.
+- **`setup_demo` job** — runs notebooks `01`/`02`: create the bronze table + seed `dim_asset`,
+  then create the Postgres `asset_live_state` table **with a PRIMARY KEY** + grants (`psycopg`).
+  These are the objects DAB can't declare directly.
+- **`stream_to_lakebase` job** — the ★ streaming job (notebook `03`), on a **classic DBR 18
+  cluster** (the sink requires DBR 18+ and does **not** support serverless).
 
 The **Zerobus producer runs off-platform** (`src/ingest/`, local venv) — that's the ingest edge.
 
-## Quickstart
+## Setup
 
-**Prerequisites:** a Databricks workspace with **Lakebase** and **Zerobus** enabled, a CLI
-profile (`databricks auth login`), the Databricks CLI ≥ 0.287, and an M2M service principal
-for the producer. The streaming sink needs **DBR 18+** available in your workspace.
+The setup has four phases: **(1)** provision the Databricks objects with DAB, **(2)** create
+the Postgres `asset_live_state` table, **(3)** feed bronze with the Zerobus producer, and
+**(4)** run the streaming sink. Scripts automate all of it.
+
+### Everything at once
 
 ```bash
-# 1. deploy all objects
-databricks bundle validate -p <profile>
-databricks bundle deploy   -t dev -p <profile>
-
-# 2. one-time: create the tables, seed dim_asset, create the Lakebase PK table + grants
-databricks bundle run setup_demo -t dev -p <profile>
-
-# 3. start the stream simulator locally (off-platform) — fills the Delta history
-cp src/ingest/.env.example src/ingest/.env   # then edit: Zerobus endpoint, SP creds
-scripts/run_producer.sh
-
-# 4. run the streaming sink job (continuous) — upserts asset_live_state
-databricks bundle run stream_to_lakebase -t dev -p <profile>
+./run.sh                              # interactive — prompts for profile + catalog (like setup.sh)
+./run.sh --profile <p> --catalog <cat>                  # non-interactive
+./run.sh --profile <p> --catalog <cat> --start-stream   # …and also launch the sink
 ```
 
-Then query the live state (psql / DBSQL on the registered Lakebase catalog, or the SDK):
+`run.sh` chains the three scripts below — it prompts for the profile and catalog if you don't
+pass them, then each step reuses what the previous resolved. Or run them individually:
+
+### Prerequisites
+
+- A Databricks workspace with **Lakebase** and **Zerobus** enabled, and **DBR 18+** available.
+- The **Databricks CLI ≥ 0.287**, authenticated to a profile (`databricks auth login -p <profile>`).
+- An **existing Unity Catalog** to deploy into. The bundle creates the *schema, volume,
+  Lakebase project and jobs inside it* — it does **not** create the catalog (creating a UC
+  catalog needs DAB's `direct` engine + a metastore storage location, which isn't portable).
+- **Workspace-admin** rights if you want `scripts/setup_zerobus.sh` to create the producer's
+  service principal and grant it.
+- `python3`; `uv` for the off-platform producer.
+
+### 1 + 2. Provision everything — `scripts/setup.sh`
+
+The turnkey orchestrator. **Safe by default** (validate only); pass `--apply` to provision.
+
+```bash
+scripts/setup.sh                                          # interactive → pick profile/catalog → validate
+scripts/setup.sh --profile <p> --catalog <cat> --apply   # deploy + create the tables
+```
+
+What `--apply` does, in order:
+
+1. **Tools** — checks `databricks` + `python3`.
+2. **Profile** — uses `--profile` (or an interactive picker); verifies the token (logs in if stale).
+3. **Catalog** — confirms `--catalog` exists (offers to create if interactive).
+4. **Names** — resolves schema / Lakebase project slug / runtime / target.
+5. **`bundle validate`**.
+6. **`bundle deploy`** — creates the **schema**, **`checkpoints` volume**, **Lakebase Autoscale
+   project** (`postgres_projects` → auto `production` branch + `primary` endpoint + database),
+   and both **jobs**. If the Lakebase slug is taken/reserved it **auto-retries with a fresh
+   slug** and prints the one it used. The sink job deploys **paused** unless `--start-stream`.
+7. **`bundle run setup_demo`** — runs the setup notebooks: create `bronze_sensor_reading`
+   (Delta, CDF on) + seed `dim_asset` (184 sensors), then create the Postgres
+   `asset_live_state` table **with a PRIMARY KEY** + grants.
+
+> Prefer raw bundle commands? Pass the **same `--var`s to every command** — `validate`,
+> `deploy`, and `run` each re-resolve variables, so omitting them reverts to the defaults
+> (`lakebase_sink_demo`/`ops`) and the job targets the wrong schema. `setup.sh` handles this for you.
+> ```bash
+> V=(--var=catalog=<cat> --var=ops_schema=ops --var=lakebase_project_id=lbsink-demo-1 --var=dbr_version=18.2.x-scala2.13)
+> databricks bundle deploy -t dev -p <profile> "${V[@]}"
+> databricks bundle run setup_demo -t dev -p <profile> "${V[@]}"
+> ```
+
+### 3. Feed bronze via Zerobus — `scripts/setup_zerobus.sh`
+
+Automates the producer setup **including the service principal**: creates (or reuses) an M2M
+service principal, mints its OAuth secret, grants it `USE CATALOG / USE SCHEMA / SELECT /
+MODIFY` on the bronze schema, and writes `src/ingest/.env`. It **reuses the values `setup.sh`
+resolved** (`provisioning/setup.env`: profile, catalog, *deployed* schema, project) and
+**auto-derives the Zerobus endpoint** (workspace id from the `x-databricks-org-id` header +
+region from the Lakebase endpoint DNS) — so it needs **no arguments**:
+
+```bash
+scripts/setup_zerobus.sh                 # no args — endpoint derived automatically
+scripts/run_producer.sh                  # stream forever  (--max-batches N for a bounded run)
+```
+
+> Any value can still be overridden with a flag (e.g. `--zerobus-endpoint` to pin it).
+
+### 4. Run the streaming sink
+
+```bash
+scripts/start_sink.sh          # reuses the captured config (provisioning/setup.env); no args
+scripts/start_sink.sh --stop   # pause it (cluster stops)
+```
+
+This deploys the `stream_to_lakebase` job **unpaused**, so the continuous sink starts on a
+**classic DBR-18 cluster** and upserts `asset_live_state` from the bronze stream. (Or pass
+`--start-stream` to `setup.sh`/`run.sh` to start it during provisioning.)
+
+Then query the live state (`psql` with a Lakebase OAuth token, DBSQL on the registered catalog,
+or the SDK — see [Part 2 → "Run the SQL yourself"](blog/lakebase-streaming-sink-part-2.md)):
 
 ```sql
--- current state, one row per asset
 SELECT site_name, sensor_asset_id, measurement_type, value, status, reading_ts
 FROM   asset_live_state
 WHERE  status <> 'OK'              -- which assets are in alarm right now?
 ORDER  BY reading_ts DESC;
 ```
 
-Re-run the query: values and `status` advance **in place** (upsert), they don't pile up —
-that's the sink doing `INSERT … ON CONFLICT (sensor_asset_id) DO UPDATE`.
+Re-run it: values and `status` advance **in place** (upsert), they don't pile up — that's the
+sink doing `INSERT … ON CONFLICT (sensor_asset_id) DO UPDATE`.
 
 ### Teardown
 
 ```bash
-databricks bundle destroy -t dev -p <profile>
+databricks bundle destroy -t dev -p <profile> "${V[@]}"   # same --var values as deploy
 ```
 
-> **Cost note.** The Lakebase sink mandates a **classic, always-on** cluster (no
-> serverless), so the `stream_to_lakebase` job runs a continuous cluster — stop it
-> (`pause_status` / cancel the run) and `bundle destroy` when you're done. Lakebase
-> Autoscale scales the endpoint to zero when idle.
+### Setup gotchas (learned the hard way)
+
+- **The sink is Public Preview** and needs **DBR 18+ on classic** (not serverless). Availability
+  varies by workspace/runtime — if `writeStream.format("postgresql")` raises *"Data source
+  postgresql does not support streamed writing,"* the preview isn't enabled on that runtime.
+- **DBR 18 = Spark 4.1 = scala 2.13** — use `18.x-scala2.13` runtime strings (the default is
+  `18.2.x-scala2.13`); a `…-scala2.12` string won't start.
+- **The PG database name is `databricks_postgres` (underscore).** The control plane reports
+  `databricks-postgres` (hyphen) but Postgres rejects it. The bundle default is correct.
+- **Deleted Lakebase slugs stay reserved**, and `postgres_projects` create isn't idempotent —
+  `setup.sh` auto-retries with a fresh slug; for raw commands, pass a new `--project-id`.
+- **Dev-mode prefixes the schema** — the jobs reference the resolved name, so they stay correct.
+
+> **Cost note.** The sink runs a **classic, always-on** cluster — deploy it paused (default) and
+> only `--start-stream` when you want it; `bundle destroy` when done. Lakebase Autoscale scales
+> the endpoint to zero when idle.
 
 ## The star file
 
-[`src/stream/sink_to_lakebase.py`](src/stream/sink_to_lakebase.py) — reads the bronze Delta
-table as a stream, keeps the newest reading per asset, enriches with status, and writes via:
+[`notebooks/03_sink_to_lakebase.py`](notebooks/03_sink_to_lakebase.py) — a Databricks notebook
+that reads the bronze Delta table as a stream, keeps the newest reading per asset, enriches with
+status, and writes via:
 
 ```python
 (out.writeStream
@@ -118,13 +199,20 @@ table as a stream, keeps the newest reading per asset, enriches with status, and
 databricks.yml              # DAB bundle (variables, includes, targets)
 resources/objects.yml       # catalog · schema · volume · Lakebase project
 resources/jobs.yml          # setup_demo job · stream_to_lakebase job (classic DBR 18)
-src/ingest/                 # Zerobus producer + proto + fleet model (off-platform)
-src/setup/                  # 01 bronze + dim_asset (Spark) · 02 Lakebase DDL + grants (psycopg)
-src/stream/sink_to_lakebase.py   # ★ Structured Streaming → Lakebase sink
+notebooks/                  # Databricks notebooks run by the jobs:
+                            #   01_bronze_and_dim · 02_lakebase_ddl · 03_sink_to_lakebase (★ the sink)
+run.sh                      # ← one command: provision + Zerobus + feed bronze (chains the scripts)
+src/ingest/                 # Zerobus producer + proto + fleet model (off-platform script)
+scripts/setup.sh            # ← turnkey provisioner (deploy + setup job; slug auto-retry)
+scripts/setup_zerobus.sh    # ← automate the producer SP + secret + grants + .env
 scripts/run_producer.sh     # compile proto + run the producer in a venv
-blog/                       # the Medium post
+blog/                       # the 2-part Medium series
 docs/diagrams/              # architecture diagrams
 ```
+
+> ℹ️ The notebook widget **defaults** are placeholders (`lakebase_sink_demo`/`ops`); the DAB
+> jobs override them via `base_parameters`, so the defaults only matter when you open a notebook
+> standalone.
 
 ## Credits
 
