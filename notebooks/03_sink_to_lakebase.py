@@ -13,6 +13,14 @@
 
 # COMMAND ----------
 
+# MAGIC %pip install "psycopg[binary]>=3.1" "databricks-sdk>=0.89.0"
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
 dbutils.widgets.text("catalog", "lakebase_sink_demo")
 dbutils.widgets.text("ops_schema", "ops")
 dbutils.widgets.text("lb_project_id", "lakebase-sink-demo")
@@ -20,6 +28,9 @@ dbutils.widgets.text("lb_endpoint", "")        # default built as "<project>.pro
 dbutils.widgets.text("lb_database", "databricks_postgres")
 dbutils.widgets.text("lb_dbtable", "public.asset_live_state")
 dbutils.widgets.dropdown("trigger_mode", "processing", ["processing", "realtime"])
+# Low-latency micro-batch cadence. "1 second" ≈ 1-2s end-to-end; "0 seconds" = run as fast as
+# possible (back-to-back batches, lowest latency, highest cluster utilization).
+dbutils.widgets.text("processing_interval", "1 second")
 
 CAT = dbutils.widgets.get("catalog")
 OPS = dbutils.widgets.get("ops_schema")
@@ -30,8 +41,10 @@ LB_ENDPOINT = dbutils.widgets.get("lb_endpoint") or f"{LB_PROJECT}.production.pr
 LB_DATABASE = dbutils.widgets.get("lb_database")
 LB_DBTABLE = dbutils.widgets.get("lb_dbtable")
 MODE = dbutils.widgets.get("trigger_mode").lower()
+PROC_INTERVAL = dbutils.widgets.get("processing_interval").strip()
 CHK = f"/Volumes/{CAT}/{OPS}/checkpoints/asset_live_state"
-print(f"{BRONZE} → Lakebase {LB_ENDPOINT}/{LB_DATABASE}/{LB_DBTABLE} (trigger={MODE})")
+print(f"{BRONZE} → Lakebase {LB_ENDPOINT}/{LB_DATABASE}/{LB_DBTABLE} "
+      f"(trigger={MODE}, interval={PROC_INTERVAL})")
 
 # COMMAND ----------
 
@@ -79,6 +92,72 @@ writer = (out.writeStream
           .option("checkpointLocation", CHK)
           .queryName("asset_live_state"))
 
-query = (writer.trigger(realTime=True) if MODE == "realtime"
-         else writer.trigger(processingTime="5 seconds")).start()
+# COMMAND ----------
+
+# MAGIC %md ## Per-batch sink throughput → Lakebase `stream_progress` (feeds the monitor `--progress` view)
+
+# COMMAND ----------
+
+# A StreamingQueryListener records each micro-batch's metrics (rows in, rows written to the sink,
+# rates, duration) into public.stream_progress so the monitor can show ACTUAL write volume, not
+# just the net row-landing view of asset_live_state. Failures here never affect the query (caught).
+import json
+import threading
+import psycopg
+from pyspark.sql.streaming import StreamingQueryListener
+from databricks.sdk import WorkspaceClient
+
+_INSERT = ("INSERT INTO public.stream_progress"
+           "(batch_id,num_input_rows,num_output_rows,input_rps,processed_rps,batch_duration_ms)"
+           " VALUES (%s,%s,%s,%s,%s,%s)")
+
+
+class _ProgressToLakebase(StreamingQueryListener):
+    def __init__(self):
+        self._ws = WorkspaceClient()
+        self._res = f"projects/{LB_PROJECT}/branches/production/endpoints/primary"
+        self._lock = threading.Lock()
+        self._connect()
+
+    def _connect(self):
+        ep = self._ws.api_client.do("GET", f"/api/2.0/postgres/{self._res}")
+        cred = self._ws.api_client.do("POST", "/api/2.0/postgres/credentials", body={"endpoint": self._res})
+        self._conn = psycopg.connect(host=ep["status"]["hosts"]["host"], port=5432, dbname=LB_DATABASE,
+                                     user=self._ws.current_user.me().user_name,
+                                     password=cred["token"], sslmode="require", autocommit=True)
+
+    def onQueryStarted(self, event): pass
+
+    def onQueryTerminated(self, event): pass
+
+    def onQueryIdle(self, event): pass
+
+    def onQueryProgress(self, event):
+        try:
+            d = json.loads(event.progress.json)
+            sink = d.get("sink") or {}
+            dur = d.get("durationMs") or {}
+            row = (int(d.get("batchId", -1)), int(d.get("numInputRows", 0) or 0),
+                   int(sink.get("numOutputRows", -1)), d.get("inputRowsPerSecond"),
+                   d.get("processedRowsPerSecond"), dur.get("triggerExecution"))
+            with self._lock:
+                try:
+                    self._conn.execute(_INSERT, row)
+                except Exception:                 # token rotated / connection dropped → reconnect
+                    self._connect()
+                    self._conn.execute(_INSERT, row)
+        except Exception as ex:                   # never let logging break the stream
+            print("progress-listener error (ignored):", ex)
+
+
+spark.streams.addListener(_ProgressToLakebase())
+print(">> progress listener attached → public.stream_progress")
+
+# Low-latency micro-batch: processingTime drives the cadence (default "1 second"; "0 seconds" =
+# as fast as possible). With a Delta source this is the lowest-latency option — Real-Time Mode
+# (realTime=...) is NOT usable here: RTM rejects a Delta input stream
+# (STREAMING_REAL_TIME_MODE.INPUT_STREAM_NOT_SUPPORTED). The realtime branch is kept only for a
+# future Kafka/Kinesis source; on Delta it will fail by design.
+query = (writer.trigger(realTime="1 minute") if MODE == "realtime"
+         else writer.trigger(processingTime=PROC_INTERVAL)).start()
 query.awaitTermination()

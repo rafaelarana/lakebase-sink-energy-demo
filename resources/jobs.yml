@@ -45,12 +45,15 @@ resources:
               lb_database: ${var.lakebase_database}
               lb_dbtable: ${var.lakebase_dbtable}
               trigger_mode: ${var.trigger_mode}
+              processing_interval: ${var.processing_interval}
           job_cluster_key: sink_cluster
       job_clusters:
         - job_cluster_key: sink_cluster
           new_cluster:
-            # The Lakebase streaming sink requires DBR 18.3+ on CLASSIC compute
-            # (dedicated/standard access mode), Photon for the realTime trigger.
+            # Lakebase sink: DBR 18.3+ on CLASSIC compute, dedicated/standard access mode.
+            # NOTE: Real-Time Mode (.trigger(realTime=...)) is NOT usable here — RTM does not
+            # support a Delta input stream (error STREAMING_REAL_TIME_MODE.INPUT_STREAM_NOT_SUPPORTED;
+            # it needs Kafka/Kinesis-style sources). This Delta-sourced sink runs in processing mode.
             spark_version: ${var.dbr_version}
             runtime_engine: PHOTON
             node_type_id: ${var.node_type_id}

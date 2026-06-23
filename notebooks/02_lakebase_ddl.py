@@ -52,6 +52,20 @@ CREATE TABLE IF NOT EXISTS {table} (
 );
 CREATE INDEX IF NOT EXISTS idx_asset_live_state_status ON {table} (status);
 CREATE INDEX IF NOT EXISTS idx_asset_live_state_site   ON {table} (site_code);
+
+-- Per-micro-batch sink throughput, written by the streaming job's StreamingQueryListener
+-- (notebook 03). Lets the monitor show ACTUAL write volume (num_output_rows), not just the
+-- net row-landing view of asset_live_state.
+CREATE TABLE IF NOT EXISTS public.stream_progress (
+    batch_id          BIGINT,
+    event_ts          TIMESTAMPTZ DEFAULT now(),
+    num_input_rows    BIGINT,
+    num_output_rows   BIGINT,
+    input_rps         DOUBLE PRECISION,
+    processed_rps     DOUBLE PRECISION,
+    batch_duration_ms DOUBLE PRECISION
+);
+CREATE INDEX IF NOT EXISTS idx_stream_progress_ts ON public.stream_progress (event_ts);
 """
 
 ws = WorkspaceClient()

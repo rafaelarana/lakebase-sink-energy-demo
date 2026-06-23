@@ -45,8 +45,11 @@ variables:
     description: Worker/driver node type for the classic stream cluster (AWS default; change per cloud)
     default: m5d.xlarge
   trigger_mode:
-    description: "processing (processingTime micro-batches) | realtime (.trigger(realTime); needs Photon)"
+    description: "processing (processingTime micro-batches) | realtime (.trigger(realTime) — NOT usable with a Delta source; RTM rejects Delta input streams)"
     default: processing
+  processing_interval:
+    description: "Low-latency micro-batch cadence for processing mode. '1 second' ≈ 1-2s e2e; '0 seconds' = as fast as possible (lowest latency, highest cluster use)."
+    default: 1 second
   stream_pause:
     description: "UNPAUSED auto-starts the continuous sink on deploy; PAUSED deploys it stopped."
     default: UNPAUSED
