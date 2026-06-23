@@ -34,7 +34,7 @@ PROFILE="";        PROFILE_EXPLICIT=false
 CATALOG="main";    CATALOG_EXPLICIT=false
 OPS_SCHEMA="ops"
 PROJECT_ID="lakebase-sink-demo"
-DBR="18.2.x-scala2.13"          # Lakebase sink needs DBR 18+ on CLASSIC compute (scala2.13)
+DBR="18.3.x-scala2.13"          # Lakebase sink needs DBR 18.3+ on CLASSIC compute, dedicated/standard (not serverless); validated on 19.x
 TARGET="dev"
 ZEROBUS_EP=""                   # optional; persisted so setup_zerobus.sh can reuse it
 DO_APPLY=false
@@ -206,7 +206,7 @@ step "7 · run setup_demo (bronze + dim_asset + Lakebase asset_live_state)"
 databricks bundle run setup_demo -t "$TARGET" -p "$PROFILE" "${VARS[@]}"
 ok "Tables created and seeded"
 
-$START_STREAM && ok "Sink deployed UNPAUSED — the continuous job is starting (classic DBR-18 cluster)."
+$START_STREAM && ok "Sink deployed UNPAUSED — the continuous job is starting (classic DBR 18.3+ cluster)."
 
 # ---- persist resolved values for setup_zerobus.sh ---------------------------
 # Resolve the ACTUAL deployed schema name (dev mode prefixes it) and save the

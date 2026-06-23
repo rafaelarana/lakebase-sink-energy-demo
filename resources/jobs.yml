@@ -3,7 +3,7 @@
 #                        (bronze Delta table, dim_asset seed, Postgres asset_live_state
 #                        PK table + grants). Serverless notebooks.
 #   stream_to_lakebase — the demo's star: Structured Streaming bronze Delta → Lakebase SINK.
-#                        Runs on a CLASSIC DBR-18 cluster (the sink does NOT support serverless).
+#                        Runs on a CLASSIC DBR 18.3+ cluster (the sink does NOT support serverless).
 # Notebook paths are relative to THIS file (resources/), hence ../notebooks/...  (no .py).
 resources:
   jobs:
@@ -49,7 +49,7 @@ resources:
       job_clusters:
         - job_cluster_key: sink_cluster
           new_cluster:
-            # The Lakebase streaming sink requires DBR 18+ on CLASSIC compute
+            # The Lakebase streaming sink requires DBR 18.3+ on CLASSIC compute
             # (dedicated/standard access mode), Photon for the realTime trigger.
             spark_version: ${var.dbr_version}
             runtime_engine: PHOTON

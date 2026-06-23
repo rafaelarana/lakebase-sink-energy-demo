@@ -17,7 +17,7 @@
 #   --catalog NAME       existing Unity Catalog         (prompted if omitted)
 #   --project-id SLUG    Lakebase project slug          (default lakebase-sink-demo; auto-retried if taken)
 #   --schema NAME        schema name                    (default ops)
-#   --dbr VERSION        runtime for the sink cluster   (default 18.2.x-scala2.13)
+#   --dbr VERSION        runtime for the sink cluster   (default 18.3.x-scala2.13; sink needs DBR 18.3+ classic)
 #   --start-stream       also launch the continuous Lakebase sink (billable classic cluster)
 #   --batches N          producer batches to send       (default 10; use --forever to stream)
 #   --forever            run the producer until Ctrl-C

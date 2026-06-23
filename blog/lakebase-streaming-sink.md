@@ -267,7 +267,7 @@ None of these are dealbreakers for the use case this thing was born for. But kno
 
 Whenever a stream needs to keep an **operational, queryable table** fresh at the lowest sane latency: live dashboards, "current state" tables behind an app, continuous CDC-ish sync into Postgres. The Lakebase sink takes the entire `foreachBatch` + JDBC + retry + connection-pool circus and folds it into a fistful of `.option()` calls — and it handles the thankless parts (batching, backpressure, deadlock-safe upserts, retries) better and more carefully than I ever bothered to by hand. And I *tried*. For years.
 
-Here's my actual, unhedged take: if your sink is Lakebase and you're on DBR 18+, hand-rolling this plumbing in 2026 isn't engineering grit — it's just unpaid suffering. Delete the closure. Write the five options. Go reclaim your afternoon.
+Here's my actual, unhedged take: if your sink is Lakebase and you're on DBR 18.3+ (classic compute — the sink is Public Preview and not on serverless), hand-rolling this plumbing in 2026 isn't engineering grit — it's just unpaid suffering. Delete the closure. Write the five options. Go reclaim your afternoon.
 
 You earned it.
 

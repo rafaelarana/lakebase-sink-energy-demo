@@ -7,7 +7,8 @@
 # MAGIC
 # MAGIC     writeStream.format("postgresql").outputMode("update").option("upsertkey", "sensor_asset_id")
 # MAGIC
-# MAGIC Requires **DBR 18+ on classic compute** (the sink does not support serverless). Runs as a
+# MAGIC Requires **DBR 18.3+ on classic compute** (dedicated/standard access; the sink does not support
+# MAGIC serverless). On DBR <18.3 `format("postgresql")` is batch-only ("does not support streamed writing"). Runs as a
 # MAGIC continuous job; `awaitTermination()` keeps the query alive.
 
 # COMMAND ----------

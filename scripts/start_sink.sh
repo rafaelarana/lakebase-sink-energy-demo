@@ -3,7 +3,7 @@
 # Start (or stop) the continuous Lakebase streaming sink — reusing the values
 # scripts/setup.sh already captured (provisioning/setup.env). No arguments needed.
 #
-#   scripts/start_sink.sh           # start the sink (billable classic DBR-18 cluster)
+#   scripts/start_sink.sh           # start the sink (billable classic DBR 18.3+ cluster)
 #   scripts/start_sink.sh --stop    # pause it (cluster stops)
 # =============================================================================
 set -euo pipefail
@@ -17,7 +17,7 @@ die(){ printf "${c_red}✗ %s${c_rst}\n" "$*" >&2; exit 1; }
 # shellcheck disable=SC1090
 . "$STATE_FILE"
 : "${PROFILE:?missing in setup.env}" "${CATALOG:?}" "${OPS_SCHEMA:?}" "${LAKEBASE_PROJECT_ID:?}"
-TARGET="${TARGET:-dev}"; DBR="${DBR:-18.2.x-scala2.13}"
+TARGET="${TARGET:-dev}"; DBR="${DBR:-18.3.x-scala2.13}"   # sink needs DBR 18.3+ classic
 
 PAUSE=UNPAUSED; ACTION="Starting"
 [[ "${1:-}" == "--stop" ]] && { PAUSE=PAUSED; ACTION="Stopping"; }
@@ -29,7 +29,7 @@ databricks bundle deploy -t "$TARGET" -p "$PROFILE" \
   --var=stream_pause="$PAUSE"
 
 if [[ "$PAUSE" == "UNPAUSED" ]]; then
-  printf "${c_grn}✓ Sink started${c_rst} (continuous, classic DBR-18 cluster). Watch asset_live_state fill.\n"
+  printf "${c_grn}✓ Sink started${c_rst} (continuous, classic DBR 18.3+ cluster). Watch asset_live_state fill.\n"
 else
   printf "${c_grn}✓ Sink paused${c_rst} (cluster stops).\n"
 fi

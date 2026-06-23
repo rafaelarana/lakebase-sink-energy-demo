@@ -42,7 +42,7 @@ The repo is laid out so each piece is obvious:
 ```
 databricks.yml            # the DAB bundle — creates EVERY object
 resources/objects.yml     # schema · volume · Lakebase Autoscale project
-resources/jobs.yml        # setup job + the streaming-sink job (classic DBR 18)
+resources/jobs.yml        # setup job + the streaming-sink job (classic DBR 18.3+)
 notebooks/                # Databricks notebooks the jobs run:
                           #   01_bronze_and_dim · 02_lakebase_ddl · 03_sink_to_lakebase ★
 src/ingest/               # Zerobus producer + fleet model (runs off-platform)
@@ -111,7 +111,7 @@ resources:
       pg_version: 17
 ```
 
-`postgres_projects` is the good bit: declare the project and DAB conjures the whole Lakebase Autoscale stack — the `production` branch, a `primary` endpoint, the database — no clicking. A `setup_demo` job then creates the bronze table, seeds `dim_asset`, and runs the Postgres DDL for `asset_live_state` (with its `PRIMARY KEY` — the sink needs it). The `stream_to_lakebase` job runs the sink on a **classic DBR-18 cluster** (more on *why classic* below).
+`postgres_projects` is the good bit: declare the project and DAB conjures the whole Lakebase Autoscale stack — the `production` branch, a `primary` endpoint, the database — no clicking. A `setup_demo` job then creates the bronze table, seeds `dim_asset`, and runs the Postgres DDL for `asset_live_state` (with its `PRIMARY KEY` — the sink needs it). The `stream_to_lakebase` job runs the sink on a **classic DBR 18.3+ cluster** — the sink needs DBR 18.3+ on classic, dedicated/standard compute (not serverless); on older runtimes `format("postgresql")` is batch-only. (More on *why classic* below.)
 
 ### 4. One command
 

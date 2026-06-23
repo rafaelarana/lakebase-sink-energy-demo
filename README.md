@@ -10,6 +10,10 @@ state per asset directly into a Lakebase Autoscale (Postgres)** table via the fi
 sink — `writeStream.format("postgresql")` with `upsertkey`. No `foreachBatch`, no JDBC, no
 connection pool. **Every Databricks object is created with a Databricks Asset Bundle (DAB).**
 
+> **Validated live** (2026-06-23, DBR 19.x): 2000 Zerobus readings → bronze → the sink upserted them to
+> **exactly 184 rows (one per sensor)** in Lakebase `asset_live_state` — see [`docs/sink-proof-2026-06-23.md`](docs/sink-proof-2026-06-23.md).
+> The sink is **Public Preview** and needs **DBR 18.3+ on classic** compute (not serverless).
+
 ![Architecture](docs/diagrams/02-streaming-sink-architecture.png)
 
 ## The idea: history in the lakehouse, live state in Lakebase
@@ -39,8 +43,8 @@ the full time-series.
 - **`setup_demo` job** — runs notebooks `01`/`02`: create the bronze table + seed `dim_asset`,
   then create the Postgres `asset_live_state` table **with a PRIMARY KEY** + grants (`psycopg`).
   These are the objects DAB can't declare directly.
-- **`stream_to_lakebase` job** — the ★ streaming job (notebook `03`), on a **classic DBR 18
-  cluster** (the sink requires DBR 18+ and does **not** support serverless).
+- **`stream_to_lakebase` job** — the ★ streaming job (notebook `03`), on a **classic DBR 18.3+
+  cluster** (the sink requires DBR 18.3+, dedicated/standard access, and does **not** support serverless).
 
 The **Zerobus producer runs off-platform** (`src/ingest/`, local venv) — that's the ingest edge.
 
@@ -63,7 +67,8 @@ pass them, then each step reuses what the previous resolved. Or run them individ
 
 ### Prerequisites
 
-- A Databricks workspace with **Lakebase** and **Zerobus** enabled, and **DBR 18+** available.
+- A Databricks workspace with **Lakebase** and **Zerobus** enabled, and **DBR 18.3+** available
+  (classic compute; the streaming sink is Public Preview and not on serverless). Validated live on DBR 19.x.
 - The **Databricks CLI ≥ 0.287**, authenticated to a profile (`databricks auth login -p <profile>`).
 - An **existing Unity Catalog** to deploy into. The bundle creates the *schema, volume,
   Lakebase project and jobs inside it* — it does **not** create the catalog (creating a UC
@@ -100,7 +105,7 @@ What `--apply` does, in order:
 > `deploy`, and `run` each re-resolve variables, so omitting them reverts to the defaults
 > (`lakebase_sink_demo`/`ops`) and the job targets the wrong schema. `setup.sh` handles this for you.
 > ```bash
-> V=(--var=catalog=<cat> --var=ops_schema=ops --var=lakebase_project_id=lbsink-demo-1 --var=dbr_version=18.2.x-scala2.13)
+> V=(--var=catalog=<cat> --var=ops_schema=ops --var=lakebase_project_id=lbsink-demo-1 --var=dbr_version=18.3.x-scala2.13)
 > databricks bundle deploy -t dev -p <profile> "${V[@]}"
 > databricks bundle run setup_demo -t dev -p <profile> "${V[@]}"
 > ```
@@ -129,7 +134,7 @@ scripts/start_sink.sh --stop   # pause it (cluster stops)
 ```
 
 This deploys the `stream_to_lakebase` job **unpaused**, so the continuous sink starts on a
-**classic DBR-18 cluster** and upserts `asset_live_state` from the bronze stream. (Or pass
+**classic DBR 18.3+ cluster** and upserts `asset_live_state` from the bronze stream. (Or pass
 `--start-stream` to `setup.sh`/`run.sh` to start it during provisioning.)
 
 Then query the live state (`psql` with a Lakebase OAuth token, DBSQL on the registered catalog,
@@ -153,11 +158,13 @@ databricks bundle destroy -t dev -p <profile> "${V[@]}"   # same --var values as
 
 ### Setup gotchas (learned the hard way)
 
-- **The sink is Public Preview** and needs **DBR 18+ on classic** (not serverless). Availability
-  varies by workspace/runtime — if `writeStream.format("postgresql")` raises *"Data source
-  postgresql does not support streamed writing,"* the preview isn't enabled on that runtime.
-- **DBR 18 = Spark 4.1 = scala 2.13** — use `18.x-scala2.13` runtime strings (the default is
-  `18.2.x-scala2.13`); a `…-scala2.12` string won't start.
+- **The sink is Public Preview** and needs **DBR 18.3+ on classic compute, dedicated/standard
+  access** (not serverless). If `writeStream.format("postgresql")` raises *"Data source postgresql
+  does not support streamed writing,"* the runtime is **below 18.3** — on older DBR the `postgresql`
+  source is batch-only. Bump the runtime (validated live on **DBR 19.x**, 2026-06-23).
+- **DBR 18.3+ = Spark 4.1 = scala 2.13** — use `…-scala2.13` runtime strings (the default is
+  `18.3.x-scala2.13`); a `…-scala2.12` string won't start. If 18.3 isn't offered in your workspace,
+  any newer image (e.g. `19.x-scala2.13`) works.
 - **The PG database name is `databricks_postgres` (underscore).** The control plane reports
   `databricks-postgres` (hyphen) but Postgres rejects it. The bundle default is correct.
 - **Deleted Lakebase slugs stay reserved**, and `postgres_projects` create isn't idempotent —
@@ -198,7 +205,7 @@ status, and writes via:
 ```
 databricks.yml              # DAB bundle (variables, includes, targets)
 resources/objects.yml       # catalog · schema · volume · Lakebase project
-resources/jobs.yml          # setup_demo job · stream_to_lakebase job (classic DBR 18)
+resources/jobs.yml          # setup_demo job · stream_to_lakebase job (classic DBR 18.3+)
 notebooks/                  # Databricks notebooks run by the jobs:
                             #   01_bronze_and_dim · 02_lakebase_ddl · 03_sink_to_lakebase (★ the sink)
 run.sh                      # ← one command: provision + Zerobus + feed bronze (chains the scripts)

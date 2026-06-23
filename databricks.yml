@@ -39,8 +39,8 @@ variables:
     description: Postgres target table the streaming sink upserts into
     default: public.asset_live_state
   dbr_version:
-    description: "Runtime for the stream job. The Lakebase sink needs DBR 18+ on CLASSIC compute (Spark 4.1 = scala2.13)."
-    default: 18.2.x-scala2.13
+    description: "Runtime for the stream job. The Lakebase sink needs DBR 18.3+ on CLASSIC compute, dedicated/standard access (NOT serverless). Validated live on 19.x (2026-06-23). On DBR <18.3, format(postgresql) is batch-only → 'does not support streamed writing'."
+    default: 18.3.x-scala2.13
   node_type_id:
     description: Worker/driver node type for the classic stream cluster (AWS default; change per cloud)
     default: m5d.xlarge
